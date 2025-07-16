@@ -78,36 +78,6 @@ const RATING_ICONS: Record<string, JSX.Element> = {
   'poor': <AlertCircle className="h-5 w-5 text-red-600" />,
 };
 
-// Convert camelCase to PascalCase for backend
-const toPascalCase = (data: SustainabilityRequest): Record<string, any> => {
-  const converted: Record<string, any> = {};
-  for (const [key, value] of Object.entries(data)) {
-    const pascalKey = key.replace(/([A-Z])/g, '_$1')
-      .replace(/^_/, '')
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join('_');
-    converted[pascalKey] = value;
-  }
-  return converted;
-};
-
-// Convert response keys to camelCase
-const toCamelCase = (obj: any): any => {
-  if (Array.isArray(obj)) {
-    return obj.map(toCamelCase);
-  } else if (obj && typeof obj === 'object') {
-    const converted: any = {};
-    for (const [key, value] of Object.entries(obj)) {
-      const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
-        .replace(/^[A-Z]/, (c) => c.toLowerCase());
-      converted[camelKey] = toCamelCase(value);
-    }
-    return converted;
-  }
-  return obj;
-};
-
 export default function SustainabilityPage() {
   const [formData, setFormData] = useState<SustainabilityRequest>(DEFAULT_FORM_VALUES);
   const [loading, setLoading] = useState(false);
@@ -148,60 +118,6 @@ export default function SustainabilityPage() {
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }, [formData]);
-
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validateForm()) {
-      toast.error("Please correct the form errors");
-      return;
-    }
-
-    setLoading(true);
-    setResult(null);
-
-    try {
-      const response = await sustainabilityApi.predict(formData);
-      
-      // Process the actual API response format
-      const predictionScore = response.prediction || 0;
-      
-      // Convert prediction to a 0-100 scale (assuming max prediction is around 1000)
-      const normalizedScore = Math.min(100, Math.max(0, (predictionScore / 1000) * 100));
-      
-      // Calculate rating based on normalized score
-      let rating = 'poor';
-      if (normalizedScore >= 80) rating = 'excellent';
-      else if (normalizedScore >= 60) rating = 'good';
-      else if (normalizedScore >= 40) rating = 'fair';
-      
-      // Create a processed result object
-      const processedResult = {
-        ...response,
-        sustainabilityScore: normalizedScore,
-        originalPrediction: predictionScore,
-        rating,
-        color: RATING_COLORS[rating] || 'bg-gray-100 text-gray-800',
-        // Generate some mock breakdown data based on the prediction
-        impactBreakdown: {
-          carbonFootprint: Math.max(0, 800 - (predictionScore * 0.8)),
-          waterEfficiency: Math.min(100, normalizedScore + 10),
-          soilHealthImpact: Math.min(10, normalizedScore / 10),
-          biodiversityScore: Math.min(10, normalizedScore / 12)
-        },
-        // Generate improvement suggestions based on input data
-        improvementSuggestions: generateImprovementSuggestions(formData, normalizedScore)
-      };
-      
-      setResult(processedResult);
-      toast.success("Assessment Complete! Your sustainability assessment is ready");
-    } catch (error: unknown) {
-      console.error('Sustainability prediction error:', error);
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-      toast.error(`Analysis Failed: ${errorMessage}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [formData, validateForm]);
 
   // Generate improvement suggestions based on input data
   const generateImprovementSuggestions = (data: SustainabilityRequest, score: number) => {
@@ -244,6 +160,132 @@ export default function SustainabilityPage() {
     
     return suggestions;
   };
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validateForm()) {
+      toast.error("Please correct the form errors");
+      return;
+    }
+
+    setLoading(true);
+    setResult(null);
+
+    try {
+      const response = await sustainabilityApi.predict(formData);
+      
+      console.log('Raw API Response:', response);
+      
+      // Handle different possible response structures
+      let predictionValue = 0;
+      let modelName = 'Sustainability Assessment';
+      let cropType = formData.crop_type;
+      let status = 'success';
+      let inputFeaturesUsed = 25;
+      
+      // Try to extract prediction value from various possible structures
+      if (typeof response === 'number') {
+        predictionValue = response;
+      } else if (response && typeof response === 'object') {
+        // Try different possible field names
+        predictionValue = response.prediction || 
+                         response.predicted_value || 
+                         response.sustainability_score || 
+                         response.score || 
+                         0;
+        
+        modelName = response.model || response.model_name || 'Sustainability Assessment';
+        cropType = response.crop_type || formData.crop_type;
+        status = response.status || 'success';
+        inputFeaturesUsed = response.input_features_used || response.features_used || 25;
+      }
+      
+      // Ensure we have a valid number
+      if (typeof predictionValue !== 'number' || isNaN(predictionValue)) {
+        predictionValue = 0;
+      }
+      
+      console.log('Extracted prediction value:', predictionValue);
+      
+      // Convert prediction to a 0-100 scale
+      // Assuming prediction values are typically in range 0-1000 for sustainability
+      const normalizedScore = Math.min(100, Math.max(0, (predictionValue / 1000) * 100));
+      
+      // Calculate rating based on normalized score
+      let rating = 'poor';
+      if (normalizedScore >= 80) rating = 'excellent';
+      else if (normalizedScore >= 60) rating = 'good';
+      else if (normalizedScore >= 40) rating = 'fair';
+      
+      // Create mock impact breakdown based on prediction
+      const impactBreakdown = {
+        carbonFootprint: Math.max(0, 800 - (predictionValue * 0.8)),
+        waterEfficiency: Math.min(100, normalizedScore + 10),
+        soilHealthImpact: Math.min(10, normalizedScore / 10),
+        biodiversityScore: Math.min(10, normalizedScore / 12)
+      };
+      
+      // Generate improvement suggestions
+      const improvementSuggestions = generateImprovementSuggestions(formData, normalizedScore);
+      
+      // Create a comprehensive result object
+      const processedResult = {
+        prediction: predictionValue,
+        model: modelName,
+        sustainabilityScore: normalizedScore,
+        originalPrediction: predictionValue,
+        rating,
+        color: RATING_COLORS[rating] || 'bg-gray-100 text-gray-800',
+        cropType,
+        status,
+        inputFeaturesUsed,
+        impactBreakdown,
+        improvementSuggestions,
+        // Additional metadata
+        timestamp: new Date().toISOString(),
+        formData: { ...formData }
+      };
+      
+      console.log('Processed result:', processedResult);
+      
+      setResult(processedResult);
+      toast.success("Assessment Complete! Your sustainability assessment is ready");
+      
+    } catch (error: unknown) {
+      console.error('Sustainability prediction error:', error);
+      
+      // Create a fallback result with error information
+      const fallbackResult = {
+        prediction: 0,
+        model: 'Error - Using Fallback',
+        sustainabilityScore: 0,
+        originalPrediction: 0,
+        rating: 'poor',
+        color: RATING_COLORS['poor'],
+        cropType: formData.crop_type,
+        status: 'error',
+        inputFeaturesUsed: 0,
+        impactBreakdown: {
+          carbonFootprint: 800,
+          waterEfficiency: 20,
+          soilHealthImpact: 2,
+          biodiversityScore: 2
+        },
+        improvementSuggestions: [{
+          category: "System Error",
+          suggestion: "There was an issue with the assessment. Please try again or contact support."
+        }],
+        error: error instanceof Error ? error.message : "An unknown error occurred"
+      };
+      
+      setResult(fallbackResult);
+      
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+      toast.error(`Analysis Failed: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [formData, validateForm]);
 
   const getProgressColor = (value: number) => {
     if (value >= 80) return 'bg-green-500';
@@ -493,23 +535,33 @@ export default function SustainabilityPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Globe className="h-5 w-5 text-green-600" />
-                  Sustainability Assessment
+                  Sustainability Assessment Results
                 </CardTitle>
                 <CardDescription>
                   Your farm's environmental impact analysis
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Error Display */}
+                {result.error && (
+                  <Alert className="border-red-200 bg-red-50">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="text-red-700">
+                      <strong>Error:</strong> {result.error}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
                 {/* Overall Rating */}
                 <div className="text-center p-6 bg-green-50 rounded-lg">
                   <h3 className="text-2xl font-bold text-gray-800 mb-4">Sustainability Score</h3>
                   <div className="text-5xl font-bold text-green-600 mb-2">
-                    {result.sustainabilityScore?.toFixed(0) || '0'}/100
+                    {Math.round(result.sustainabilityScore || 0)}/100
                   </div>
                   <div className="mb-4">
                     <Badge className={result.color}>
                       {RATING_ICONS[result.rating]}
-                      <span className="ml-2">{result.rating?.toUpperCase()}</span>
+                      <span className="ml-2">{(result.rating || 'unknown').toUpperCase()}</span>
                     </Badge>
                   </div>
                   <CustomProgressBar 
@@ -517,9 +569,12 @@ export default function SustainabilityPage() {
                     color={getProgressColor(result.sustainabilityScore || 0)}
                     height="h-3"
                   />
-                  <p className="text-sm text-gray-600 mt-2">
-                    Model Prediction: {result.originalPrediction?.toFixed(2)} | Model: {result.model}
-                  </p>
+                  <div className="mt-3 text-sm text-gray-600 space-y-1">
+                    <p>Raw Prediction: {Number(result.originalPrediction || 0).toFixed(2)}</p>
+                    <p>Model: {result.model}</p>
+                    <p>Crop: {result.cropType} | Status: {result.status}</p>
+                    <p>Features Used: {result.inputFeaturesUsed}</p>
+                  </div>
                 </div>
 
                 {/* Impact Breakdown */}
@@ -533,7 +588,7 @@ export default function SustainabilityPage() {
                       <div className="p-4 border rounded-lg">
                         <div className="flex justify-between mb-2">
                           <span className="font-medium">Carbon Footprint</span>
-                          <span className="font-bold">{result.impactBreakdown.carbonFootprint?.toFixed(1) || '0'} kg CO₂/ha</span>
+                          <span className="font-bold">{Number(result.impactBreakdown.carbonFootprint || 0).toFixed(1)} kg CO₂/ha</span>
                         </div>
                         <CustomProgressBar 
                           value={100 - ((result.impactBreakdown.carbonFootprint || 0) / 1000 * 100)} 
@@ -545,7 +600,7 @@ export default function SustainabilityPage() {
                       <div className="p-4 border rounded-lg">
                         <div className="flex justify-between mb-2">
                           <span className="font-medium">Water Efficiency</span>
-                          <span className="font-bold">{result.impactBreakdown.waterEfficiency?.toFixed(1) || '0'}%</span>
+                          <span className="font-bold">{Number(result.impactBreakdown.waterEfficiency || 0).toFixed(1)}%</span>
                         </div>
                         <CustomProgressBar 
                           value={result.impactBreakdown.waterEfficiency || 0} 
@@ -557,7 +612,7 @@ export default function SustainabilityPage() {
                       <div className="p-4 border rounded-lg">
                         <div className="flex justify-between mb-2">
                           <span className="font-medium">Soil Health</span>
-                          <span className="font-bold">{result.impactBreakdown.soilHealthImpact?.toFixed(1) || '0'}/10</span>
+                          <span className="font-bold">{Number(result.impactBreakdown.soilHealthImpact || 0).toFixed(1)}/10</span>
                         </div>
                         <CustomProgressBar 
                           value={(result.impactBreakdown.soilHealthImpact || 0) * 10} 
@@ -568,7 +623,7 @@ export default function SustainabilityPage() {
                       <div className="p-4 border rounded-lg">
                         <div className="flex justify-between mb-2">
                           <span className="font-medium">Biodiversity</span>
-                          <span className="font-bold">{result.impactBreakdown.biodiversityScore?.toFixed(1) || '0'}/10</span>
+                          <span className="font-bold">{Number(result.impactBreakdown.biodiversityScore || 0).toFixed(1)}/10</span>
                         </div>
                         <CustomProgressBar 
                           value={(result.impactBreakdown.biodiversityScore || 0) * 10} 

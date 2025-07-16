@@ -8,6 +8,8 @@ import {
   YieldPredictionRequest,
   YieldPredictionResponse,
   DashboardData,
+  MarketPriceRequest,
+  MarketPriceResponse,
 } from '@/types';
 
 // Base API configuration
@@ -130,24 +132,47 @@ export const cropYieldApi = {
 };
 
 export const marketPriceApi = {
-  predict: async (data: {
-    Market_Price_per_ton: number;
-    Demand_Index: number;
-    Supply_Index: number;
-    Competitor_Price_per_ton: number;
-    Economic_Indicator: number;
-    Weather_Impact_Score: number;
-    Seasonal_Factor: number;
-    Consumer_Trend_Index: number;
-    Product: string;
-  }): Promise<{
-    prediction: number;
-    model: string;
-    input_features_used: number;
-    product: string;
-    status: string;
-  }> => {
-    return apiCall(() => api.post('/predict/market-price', data));
+  predict: async (
+    data: MarketPriceRequest,
+    options?: { signal?: AbortSignal }
+  ): Promise<MarketPriceResponse> => {
+    // Transform camelCase to backend format if needed
+    const backendData = {
+      Market_Price_per_ton: data.market_price_per_ton,
+      Demand_Index: data.demand_index,
+      Supply_Index: data.supply_index,
+      Competitor_Price_per_ton: data.competitor_price_per_ton,
+      Economic_Indicator: data.economic_indicator,
+      Weather_Impact_Score: data.weather_impact_score,
+      Seasonal_Factor: data.seasonal_factor,
+      Consumer_Trend_Index: data.consumer_trend_index,
+      Product: data.product,
+    };
+
+    return apiCall(async () => {
+      const response = await api.post<any>('/predict/market-price', backendData, options);
+      
+      // Transform response back to camelCase and return the response with transformed data
+      const transformedData: MarketPriceResponse = {
+        predictedPrice: response.data.prediction || response.data.predicted_price,
+        predicted_price: response.data.prediction || response.data.predicted_price,
+        confidence: response.data.confidence || 0.8,
+        price_trend: response.data.price_trend || 'stable',
+        market_factors: response.data.market_factors || [],
+        recommendations: response.data.recommendations || [],
+        model: response.data.model || 'market_price_model',
+        input_features_used: response.data.input_features_used || 9,
+        product: response.data.product || data.product,
+        status: response.data.status || 'success',
+        prediction: undefined
+      };
+
+      // Return the response object with transformed data
+      return {
+        ...response,
+        data: transformedData
+      };
+    });
   },
 };
 
@@ -448,91 +473,91 @@ export const analyticsApi = {
   },
 };
 
-export const userApi = {
-  getProfile: async (): Promise<{
-    id: string;
-    username: string;
-    email: string;
-    role: string;
-    createdAt: string;
-    lastLogin: string;
-    preferences: Record<string, any>;
-  }> => {
-    return apiCall(() => api.get('/user/profile'));
-  },
+// export const userApi = {
+//   getProfile: async (): Promise<{
+//     id: string;
+//     username: string;
+//     email: string;
+//     role: string;
+//     createdAt: string;
+//     lastLogin: string;
+//     preferences: Record<string, any>;
+//   }> => {
+//     return apiCall(() => api.get('/user/profile'));
+//   },
 
-  updateProfile: async (data: {
-    username?: string;
-    email?: string;
-    preferences?: Record<string, any>;
-  }): Promise<{
-    message: string;
-    user: any;
-  }> => {
-    return apiCall(() => api.put('/user/profile', data));
-  },
+//   updateProfile: async (data: {
+//     username?: string;
+//     email?: string;
+//     preferences?: Record<string, any>;
+//   }): Promise<{
+//     message: string;
+//     user: any;
+//   }> => {
+//     return apiCall(() => api.put('/user/profile', data));
+//   },
 
-  changePassword: async (data: {
-    currentPassword: string;
-    newPassword: string;
-  }): Promise<{
-    message: string;
-  }> => {
-    return apiCall(() => api.put('/user/password', data));
-  },
-};
+//   changePassword: async (data: {
+//     currentPassword: string;
+//     newPassword: string;
+//   }): Promise<{
+//     message: string;
+//   }> => {
+//     return apiCall(() => api.put('/user/password', data));
+//   },
+// };
 
-export const authApi = {
-  login: async (credentials: {
-    username: string;
-    password: string;
-  }): Promise<{
-    token: string;
-    user: any;
-    expiresIn: number;
-  }> => {
-    return apiCall(() => api.post('/auth/login', credentials));
-  },
+// export const authApi = {
+//   login: async (credentials: {
+//     username: string;
+//     password: string;
+//   }): Promise<{
+//     token: string;
+//     user: any;
+//     expiresIn: number;
+//   }> => {
+//     return apiCall(() => api.post('/auth/login', credentials));
+//   },
 
-  register: async (data: {
-    username: string;
-    email: string;
-    password: string;
-  }): Promise<{
-    message: string;
-    user: any;
-  }> => {
-    return apiCall(() => api.post('/auth/register', data));
-  },
+//   register: async (data: {
+//     username: string;
+//     email: string;
+//     password: string;
+//   }): Promise<{
+//     message: string;
+//     user: any;
+//   }> => {
+//     return apiCall(() => api.post('/auth/register', data));
+//   },
 
-  logout: async (): Promise<{
-    message: string;
-  }> => {
-    return apiCall(() => api.post('/auth/logout'));
-  },
+//   logout: async (): Promise<{
+//     message: string;
+//   }> => {
+//     return apiCall(() => api.post('/auth/logout'));
+//   },
 
-  refreshToken: async (): Promise<{
-    token: string;
-    expiresIn: number;
-  }> => {
-    return apiCall(() => api.post('/auth/refresh'));
-  },
+//   refreshToken: async (): Promise<{
+//     token: string;
+//     expiresIn: number;
+//   }> => {
+//     return apiCall(() => api.post('/auth/refresh'));
+//   },
 
-  forgotPassword: async (email: string): Promise<{
-    message: string;
-  }> => {
-    return apiCall(() => api.post('/auth/forgot-password', { email }));
-  },
+//   forgotPassword: async (email: string): Promise<{
+//     message: string;
+//   }> => {
+//     return apiCall(() => api.post('/auth/forgot-password', { email }));
+//   },
 
-  resetPassword: async (data: {
-    token: string;
-    newPassword: string;
-  }): Promise<{
-    message: string;
-  }> => {
-    return apiCall(() => api.post('/auth/reset-password', data));
-  },
-};
+//   resetPassword: async (data: {
+//     token: string;
+//     newPassword: string;
+//   }): Promise<{
+//     message: string;
+//   }> => {
+//     return apiCall(() => api.post('/auth/reset-password', data));
+//   },
+// };
 
 // Export default axios instance
 export default api;
@@ -548,9 +573,7 @@ export const apiService = {
   health: healthApi,
   models: modelsApi,
   test: testApi,
-  analytics: analyticsApi,
-  user: userApi,
-  auth: authApi,
+  analytics: analyticsApi
 };
 
 // Utility functions for external use

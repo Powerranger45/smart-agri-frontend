@@ -53,11 +53,11 @@ export default function HomePage() {
     },
     {
       icon: <TrendingUp className="h-8 w-8 text-purple-600" />,
-      title: 'Yield Prediction',
-      description: 'Predict crop yields using advanced ML models trained on agricultural data and weather patterns.',
-      href: '/yield-prediction',
+      title: 'Market Price Predict',
+      description: 'Predict agricultural market prices using advanced ML models trained on market data, supply-demand dynamics, and economic indicators.',
+      href: '/market-price',
       color: 'bg-purple-50 hover:bg-purple-100',
-      benefits: ['Accurate forecasting', 'Risk assessment', 'Planning optimization']
+      benefits: ['Price forecasting', 'Market trend analysis', 'Profit optimization']
     },
     {
       icon: <BarChart3 className="h-8 w-8 text-orange-600" />,

@@ -61,6 +61,14 @@ export interface CropYieldResponse {
 
 // ──────────────────────────── Market Price Prediction Types ──────────────────────────── //
 export interface MarketPriceRequest {
+  marketPricePerTon: string | number | readonly string[] | undefined;
+  demandIndex: string | number | readonly string[] | undefined;
+  supplyIndex: string | number | readonly string[] | undefined;
+  competitorPricePerTon: string | number | readonly string[] | undefined;
+  economicIndicator: string | number | readonly string[] | undefined;
+  weatherImpactScore: string | number | readonly string[] | undefined;
+  seasonalFactor: string | number | readonly string[] | undefined;
+  consumerTrendIndex: string | number | readonly string[] | undefined;
   // Base market features
   market_price_per_ton: number;
   demand_index: number;
@@ -75,6 +83,9 @@ export interface MarketPriceRequest {
 }
 
 export interface MarketPriceResponse {
+  prediction: undefined;
+  status: string;
+  predictedPrice: any;
   predicted_price: number;
   confidence: number;
   price_trend: 'up' | 'down' | 'stable';
@@ -84,6 +95,9 @@ export interface MarketPriceResponse {
     description: string;
   }>;
   recommendations: string[];
+  model: string; // Add this line
+  input_features_used: number; // Add this line if not already present
+  product: string; // Add this line if not already present
 }
 
 // ──────────────────────────── Sustainability Assessment Types ──────────────────────────── //
@@ -101,6 +115,14 @@ export interface SustainabilityRequest {
 }
 
 export interface SustainabilityResponse {
+  predicted_value: number;
+  score: any;
+  model_name: string;
+  features_used: number;
+  model: string;
+  crop_type: string;
+  status: string;
+  input_features_used: number;
   prediction: number;
   sustainability_score: number;
   confidence: number;
