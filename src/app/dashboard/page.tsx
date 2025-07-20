@@ -1,381 +1,433 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
-import { DashboardData } from '@/types';
-import { dashboardApi } from '@/services/api';
-export default function DashboardPage() {
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [selectedTimeRange, setSelectedTimeRange] = useState('30d');
+import React, { useState, useEffect } from 'react';
+import { Search, Volume2, MapPin, Thermometer, Droplets, Wind, Eye, Gauge, Sun, Cloud, CloudRain, CloudSnow, Zap, Sunrise, Sunset } from 'lucide-react';
 
+const WeatherApp = () => {
+  const [weatherData, setWeatherData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [locationData, setLocationData] = useState<any>(null);
+
+  // Update current time every minute
   useEffect(() => {
-    loadDashboardData();
-  }, [selectedTimeRange]);
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
-  const loadDashboardData = async () => {
-    setIsLoading(true);
+  // Get user's location on mount
+  useEffect(() => {
+    getCurrentLocationWeather();
+  }, []);
+
+  const getCurrentLocationWeather = () => {
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        fetchWeatherByCoords(position.coords.latitude, position.coords.longitude, 'Current Location');
+      },
+      (error) => {
+        // Fallback to London coordinates if location is denied
+        fetchWeatherByCoords(51.5074, -0.1278, 'London, UK');
+      }
+    );
+  };
+
+  const searchLocation = async (cityName: string) => {
     try {
-      const data = await dashboardApi.getData(selectedTimeRange);
-      setDashboardData(data);
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-      toast("Failed to load dashboard data. Please try again.");
-    } finally {
-      setIsLoading(false);
+      const response = await fetch(
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1&language=en&format=json`
+      );
+      const data = await response.json();
+      
+      if (data.results && data.results.length > 0) {
+        const location = data.results[0];
+        return {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          name: location.name,
+          country: location.country
+        };
+      }
+      throw new Error('Location not found');
+    } catch (err) {
+      throw new Error('Unable to find location');
     }
   };
 
-  const timeRanges = [
-    { value: '7d', label: 'Last 7 Days' },
-    { value: '30d', label: 'Last 30 Days' },
-    { value: '90d', label: 'Last 3 Months' },
-    { value: '1y', label: 'Last Year' }
-  ];
+  const fetchWeatherByCoords = async (lat: number, lon: number, locationName: string | null = null) => {
+    try {
+      // Fetch current weather and forecast
+      const currentResponse = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max&timezone=auto`
+      );
+      
+      if (!currentResponse.ok) {
+        throw new Error('Weather data not available');
+      }
+      
+      const weatherResponse = await currentResponse.json();
+      
+      // If no location name provided, try to get it from reverse geocoding
+      let finalLocationName = locationName;
+      if (!locationName) {
+        try {
+          const geoResponse = await fetch(
+            `https://geocoding-api.open-meteo.com/v1/search?latitude=${lat}&longitude=${lon}&count=1&language=en&format=json`
+          );
+          const geoData = await geoResponse.json();
+          if (geoData.results && geoData.results.length > 0) {
+            finalLocationName = `${geoData.results[0].name}, ${geoData.results[0].country}`;
+          }
+        } catch (e) {
+          finalLocationName = `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+        }
+      }
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="container mx-auto px-4 py-8">
-          <div className="ag-loading h-64 w-full"></div>
-        </div>
-      </div>
-    );
-  }
+      const processedData = {
+        location: {
+          name: finalLocationName,
+          latitude: lat,
+          longitude: lon
+        },
+        current: {
+          temperature: Math.round(weatherResponse.current.temperature_2m),
+          feels_like: Math.round(weatherResponse.current.apparent_temperature),
+          humidity: weatherResponse.current.relative_humidity_2m,
+          wind_speed: Math.round(weatherResponse.current.wind_speed_10m),
+          wind_direction: weatherResponse.current.wind_direction_10m,
+          pressure: Math.round(weatherResponse.current.surface_pressure),
+          weather_code: weatherResponse.current.weather_code,
+          is_day: weatherResponse.current.is_day,
+          precipitation: weatherResponse.current.precipitation || 0
+        },
+        daily: {
+          max_temp: Math.round(weatherResponse.daily.temperature_2m_max[0]),
+          min_temp: Math.round(weatherResponse.daily.temperature_2m_min[0]),
+          sunrise: new Date(weatherResponse.daily.sunrise[0]),
+          sunset: new Date(weatherResponse.daily.sunset[0]),
+          uv_index: Math.round(weatherResponse.daily.uv_index_max[0])
+        }
+      };
+
+      setWeatherData(processedData);
+      setLocationData({ name: finalLocationName, lat, lon });
+      setError(null);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    
+    setLoading(true);
+    try {
+      const location = await searchLocation(searchQuery);
+      await fetchWeatherByCoords(
+        location.latitude, 
+        location.longitude, 
+        `${location.name}, ${location.country}`
+      );
+      setSearchQuery('');
+    } catch (err: any) {
+      setError(err.message);
+      setLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
+  const speakWeather = () => {
+    if (!weatherData || !('speechSynthesis' in window)) {
+      alert('Speech synthesis not supported in your browser');
+      return;
+    }
+
+    const { location, current, daily } = weatherData;
+    const condition = getWeatherDescription(current.weather_code);
+    
+    const text = `The weather in ${location.name} is ${condition}. 
+                  The temperature is ${current.temperature} degrees Celsius, feeling like ${current.feels_like} degrees. 
+                  Humidity is ${current.humidity} percent with winds at ${current.wind_speed} kilometers per hour.
+                  Today's high is ${daily.max_temp} and low is ${daily.min_temp} degrees.`;
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.8;
+    utterance.pitch = 1;
+    speechSynthesis.speak(utterance);
+  };
+
+  const getWeatherDescription = (code: number) => {
+    const weatherCodes: { [key: number]: string } = {
+      0: 'Clear sky',
+      1: 'Mainly clear',
+      2: 'Partly cloudy',
+      3: 'Overcast',
+      45: 'Fog',
+      48: 'Depositing rime fog',
+      51: 'Light drizzle',
+      53: 'Moderate drizzle',
+      55: 'Dense drizzle',
+      56: 'Light freezing drizzle',
+      57: 'Dense freezing drizzle',
+      61: 'Slight rain',
+      63: 'Moderate rain',
+      65: 'Heavy rain',
+      66: 'Light freezing rain',
+      67: 'Heavy freezing rain',
+      71: 'Slight snow fall',
+      73: 'Moderate snow fall',
+      75: 'Heavy snow fall',
+      77: 'Snow grains',
+      80: 'Slight rain showers',
+      81: 'Moderate rain showers',
+      82: 'Violent rain showers',
+      85: 'Slight snow showers',
+      86: 'Heavy snow showers',
+      95: 'Thunderstorm',
+      96: 'Thunderstorm with slight hail',
+      99: 'Thunderstorm with heavy hail'
+    };
+    return weatherCodes[code] || 'Unknown';
+  };
+
+  const getWeatherIcon = (code: number, isDay: boolean) => {
+    const iconClass = "w-16 h-16";
+    
+    if (code === 0) {
+      return isDay ? <Sun className={`${iconClass} text-yellow-500`} /> : <div className={`${iconClass} text-blue-200 flex items-center justify-center text-4xl`}>🌙</div>;
+    } else if ([1, 2, 3].includes(code)) {
+      return <Cloud className={`${iconClass} text-gray-500`} />;
+    } else if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) {
+      return <CloudRain className={`${iconClass} text-blue-500`} />;
+    } else if ([56, 57, 66, 67, 71, 73, 75, 77, 85, 86].includes(code)) {
+      return <CloudSnow className={`${iconClass} text-blue-300`} />;
+    } else if ([95, 96, 99].includes(code)) {
+      return <Zap className={`${iconClass} text-yellow-600`} />;
+    }
+    return <Cloud className={`${iconClass} text-gray-500`} />;
+  };
+
+  const getBackgroundGradient = () => {
+    if (!weatherData) return 'from-blue-400 to-blue-600';
+    
+    const code = weatherData.current.weather_code;
+    const isDay = weatherData.current.is_day;
+    
+    if (code === 0) {
+      return isDay ? 'from-orange-400 to-pink-500' : 'from-indigo-900 to-purple-900';
+    } else if ([1, 2, 3].includes(code)) {
+      return isDay ? 'from-gray-400 to-gray-600' : 'from-gray-700 to-gray-900';
+    } else if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) {
+      return 'from-blue-500 to-blue-700';
+    } else if ([56, 57, 66, 67, 71, 73, 75, 77, 85, 86].includes(code)) {
+      return 'from-blue-200 to-blue-400';
+    } else if ([95, 96, 99].includes(code)) {
+      return 'from-gray-700 to-gray-900';
+    }
+    return 'from-blue-400 to-blue-600';
+  };
+
+  const getWindDirection = (degrees: number) => {
+    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const index = Math.round(degrees / 45) % 8;
+    return directions[index];
+  };
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
-      <div className="ag-hero-section">
-        <div className="container mx-auto px-4 py-8">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold mb-2">Agricultural Dashboard</h1>
-              <p className="text-green-100">
-                Monitor your agricultural insights and analytics
-              </p>
-            </div>
-            <div className="mt-4 md:mt-0">
-              <Select value={selectedTimeRange} onValueChange={setSelectedTimeRange}>
-                <SelectTrigger className="w-48 bg-white dark:bg-gray-800">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {timeRanges.map((range) => (
-                    <SelectItem key={range.value} value={range.value}>
-                      {range.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+    <div className={`min-h-screen bg-gradient-to-br ${getBackgroundGradient()} transition-all duration-1000 p-4`}>
+      <div className="max-w-md mx-auto">
+        {/* Header */}
+        <div className="text-center mb-8 pt-8">
+          <h1 className="text-3xl font-bold text-white mb-2">Weather App</h1>
+          <p className="text-white/80">{currentTime.toLocaleString()}</p>
+          <p className="text-white/60 text-sm mt-2">Powered by Open-Meteo</p>
+        </div>
+
+        {/* Search Bar */}
+        <div className="mb-8">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Search for a city..."
+              className="w-full px-4 py-3 pl-12 rounded-2xl bg-white/20 backdrop-blur-md text-white placeholder-white/70 border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/50"
+            />
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/70 w-5 h-5" />
+            <button
+              onClick={handleSearch}
+              className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-white/20 hover:bg-white/30 rounded-xl px-4 py-2 text-white text-sm transition-all duration-200"
+            >
+              Search
+            </button>
           </div>
         </div>
-      </div>
 
-      <div className="container mx-auto px-4 py-8">
-        {dashboardData && (
-          <div className="space-y-8">
-            {/* Key Metrics */}
-            <div className="ag-stats-grid">
-              <Card className="ag-metric-card">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Total Predictions
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {dashboardData.totalPredictions}
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    +{dashboardData.predictionGrowth}% from last period
-                  </p>
-                </CardContent>
-              </Card>
+        {/* Loading State */}
+        {loading && (
+          <div className="text-center text-white">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+            <p className="mt-2">Loading weather data...</p>
+          </div>
+        )}
 
-              <Card className="ag-metric-card">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Avg. Yield Prediction
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {dashboardData.avgYieldPrediction.toFixed(1)} t/ha
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {dashboardData.yieldTrend > 0 ? '+' : ''}{dashboardData.yieldTrend.toFixed(1)}% from last period
-                  </p>
-                </CardContent>
-              </Card>
+        {/* Error State */}
+        {error && (
+          <div className="bg-red-500/20 backdrop-blur-md rounded-2xl p-6 mb-8 border border-red-500/30">
+            <p className="text-white text-center">{error}</p>
+            <button
+              onClick={getCurrentLocationWeather}
+              className="w-full mt-4 bg-white/20 hover:bg-white/30 rounded-xl py-2 text-white transition-all duration-200"
+            >
+              Try Current Location
+            </button>
+          </div>
+        )}
 
-              <Card className="ag-metric-card">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Sustainability Score
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                    {dashboardData.sustainabilityScore.toFixed(1)}/10
+        {/* Weather Display */}
+        {weatherData && !loading && (
+          <div className="space-y-6">
+            {/* Main Weather Card */}
+            <div className="bg-white/20 backdrop-blur-md rounded-3xl p-6 border border-white/30">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex-1">
+                  <div className="flex items-center text-white mb-1">
+                    <MapPin className="w-4 h-4 mr-1" />
+                    <span className="text-lg font-semibold">{weatherData.location.name}</span>
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {dashboardData.sustainabilityTrend > 0 ? '+' : ''}{dashboardData.sustainabilityTrend.toFixed(1)}% improvement
+                  <p className="text-white/80 text-sm">
+                    {weatherData.location.latitude.toFixed(2)}, {weatherData.location.longitude.toFixed(2)}
                   </p>
-                </CardContent>
-              </Card>
+                </div>
+                <button
+                  onClick={getCurrentLocationWeather}
+                  className="bg-white/20 hover:bg-white/30 rounded-xl p-2 text-white transition-all duration-200"
+                  title="Get current location weather"
+                >
+                  <MapPin className="w-5 h-5" />
+                </button>
+              </div>
 
-              <Card className="ag-metric-card">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Active Farms
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                    {dashboardData.activeFarms}
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {dashboardData.farmGrowth > 0 ? '+' : ''}{dashboardData.farmGrowth}% new farms
-                  </p>
-                </CardContent>
-              </Card>
+              <div className="text-center mb-6">
+                <div className="flex justify-center mb-4">
+                  {getWeatherIcon(weatherData.current.weather_code, weatherData.current.is_day)}
+                </div>
+                <h2 className="text-5xl font-bold text-white mb-2">{weatherData.current.temperature}°</h2>
+                <p className="text-white/90 text-lg">{getWeatherDescription(weatherData.current.weather_code)}</p>
+                <p className="text-white/70 text-sm">Feels like {weatherData.current.feels_like}°</p>
+                <div className="flex justify-center items-center mt-2 text-white/60 text-sm">
+                  <span>H: {weatherData.daily.max_temp}°</span>
+                  <span className="mx-2">•</span>
+                  <span>L: {weatherData.daily.min_temp}°</span>
+                </div>
+              </div>
+
+              {/* Speak Button */}
+              <button
+                onClick={speakWeather}
+                className="w-full bg-white/20 hover:bg-white/30 rounded-2xl py-3 text-white font-semibold flex items-center justify-center space-x-2 transition-all duration-200 hover:scale-105"
+              >
+                <Volume2 className="w-5 h-5" />
+                <span>Speak Weather</span>
+              </button>
             </div>
 
-            {/* Charts and Analytics */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Crop Distribution */}
-              <Card className="ag-card">
-                <CardHeader>
-                  <CardTitle className="text-xl text-gray-800 dark:text-gray-200">
-                    Crop Distribution
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {dashboardData.cropDistribution.map((crop: any, index: number) => (
-                      <div key={index} className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div
-                            className="w-4 h-4 rounded-full"
-                            style={{ backgroundColor: crop.color }}
-                          ></div>
-                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                            {crop.crop}
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                            {crop.percentage}%
-                          </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {crop.count} farms
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+            {/* Weather Details */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white/20 backdrop-blur-md rounded-2xl p-4 border border-white/30">
+                <div className="flex items-center text-white/80 mb-2">
+                  <Droplets className="w-4 h-4 mr-2" />
+                  <span className="text-sm">Humidity</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{weatherData.current.humidity}%</p>
+              </div>
 
-              {/* Recent Activity */}
-              <Card className="ag-card">
-                <CardHeader>
-                  <CardTitle className="text-xl text-gray-800 dark:text-gray-200">
-                    Recent Activity
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {dashboardData.recentActivity.map((activity: any, index: any) => (
-                      <div key={index} className="flex items-start space-x-3">
-                        <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-                        <div className="flex-1">
-                          <p className="text-sm text-gray-700 dark:text-gray-300">
-                            {activity.description}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {activity.timestamp}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="bg-white/20 backdrop-blur-md rounded-2xl p-4 border border-white/30">
+                <div className="flex items-center text-white/80 mb-2">
+                  <Wind className="w-4 h-4 mr-2" />
+                  <span className="text-sm">Wind</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{weatherData.current.wind_speed} km/h</p>
+                <p className="text-white/60 text-xs">{getWindDirection(weatherData.current.wind_direction)}</p>
+              </div>
+
+              <div className="bg-white/20 backdrop-blur-md rounded-2xl p-4 border border-white/30">
+                <div className="flex items-center text-white/80 mb-2">
+                  <Gauge className="w-4 h-4 mr-2" />
+                  <span className="text-sm">Pressure</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{weatherData.current.pressure} hPa</p>
+              </div>
+
+              <div className="bg-white/20 backdrop-blur-md rounded-2xl p-4 border border-white/30">
+                <div className="flex items-center text-white/80 mb-2">
+                  <Sun className="w-4 h-4 mr-2" />
+                  <span className="text-sm">UV Index</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{weatherData.daily.uv_index}</p>
+                <p className="text-white/60 text-xs">
+                  {weatherData.daily.uv_index <= 2 ? 'Low' : 
+                   weatherData.daily.uv_index <= 5 ? 'Moderate' :
+                   weatherData.daily.uv_index <= 7 ? 'High' :
+                   weatherData.daily.uv_index <= 10 ? 'Very High' : 'Extreme'}
+                </p>
+              </div>
             </div>
 
-            {/* Yield Trends */}
-            <Card className="ag-card">
-              <CardHeader>
-                <CardTitle className="text-xl text-gray-800 dark:text-gray-200">
-                  Yield Trends
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {dashboardData.yieldTrends.map((trend:any, index:any) => (
-                    <div key={index} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                        {trend.crop}
-                      </h4>
-                      <div className="text-2xl font-bold text-green-600 dark:text-green-400 mb-1">
-                        {trend.yield.toFixed(1)} t/ha
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className={`text-sm ${trend.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {trend.change >= 0 ? '↗' : '↘'} {Math.abs(trend.change).toFixed(1)}%
-                        </span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          vs last period
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+            {/* Sun Times */}
+            <div className="bg-white/20 backdrop-blur-md rounded-2xl p-4 border border-white/30">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center text-white/80">
+                    <Sunrise className="w-4 h-4 mr-2" />
+                    <span className="text-sm">Sunrise</span>
+                  </div>
+                  <p className="text-white font-semibold">{formatTime(weatherData.daily.sunrise)}</p>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Regional Performance */}
-            <Card className="ag-card">
-              <CardHeader>
-                <CardTitle className="text-xl text-gray-800 dark:text-gray-200">
-                  Regional Performance
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {dashboardData.regionalData.map((region:any, index:any) => (
-                    <div key={index} className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                        {region.state}
-                      </h4>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">
-                            Avg Yield
-                          </span>
-                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                            {region.avgYield.toFixed(1)} t/ha
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">
-                            Farms
-                          </span>
-                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                            {region.farmCount}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">
-                            Sustainability
-                          </span>
-                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                            {region.sustainabilityScore.toFixed(1)}/10
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center text-white/80">
+                    <Sunset className="w-4 h-4 mr-2" />
+                    <span className="text-sm">Sunset</span>
+                  </div>
+                  <p className="text-white font-semibold">{formatTime(weatherData.daily.sunset)}</p>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
-            {/* Recommendations */}
-            <Card className="ag-card">
-              <CardHeader>
-                <CardTitle className="text-xl text-gray-800 dark:text-gray-200">
-                  AI Recommendations
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {dashboardData.recommendations.map((rec: any, index: number) => (
-                    <div key={index} className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-700">
-                      <div className="flex items-start space-x-3">
-                        <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
-                          <span className="text-blue-600 dark:text-blue-400 font-bold text-sm">
-                            {index + 1}
-                          </span>
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">
-                            {rec.title}
-                          </h4>
-                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                            {rec.description}
-                          </p>
-                          <div className="flex items-center space-x-2">
-                            <span className={`text-xs px-2 py-1 rounded-full ${
-                              rec.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400' :
-                              rec.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400' :
-                              'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-                            }`}>
-                              {rec.priority} priority
-                            </span>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              Impact: {rec.impact}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+            {/* Precipitation if any */}
+            {weatherData.current.precipitation > 0 && (
+              <div className="bg-white/20 backdrop-blur-md rounded-2xl p-4 border border-white/30">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center text-white/80">
+                    <CloudRain className="w-4 h-4 mr-2" />
+                    <span className="text-sm">Precipitation</span>
+                  </div>
+                  <p className="text-2xl font-bold text-white">{weatherData.current.precipitation} mm</p>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Action Center */}
-            <Card className="ag-card">
-              <CardHeader>
-                <CardTitle className="text-xl text-gray-800 dark:text-gray-200">
-                  Quick Actions
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <Button
-                    className="ag-button h-auto p-4 flex flex-col items-center space-y-2"
-                    onClick={() => window.location.href = '/crop-recommendation'}
-                  >
-                    <span className="text-lg">🌱</span>
-                    <span className="text-sm">Get Crop Recommendation</span>
-                  </Button>
-
-                  <Button
-                    className="ag-button h-auto p-4 flex flex-col items-center space-y-2"
-                    onClick={() => window.location.href = '/yield-prediction'}
-                  >
-                    <span className="text-lg">📊</span>
-                    <span className="text-sm">Predict Yield</span>
-                  </Button>
-
-                  <Button
-                    className="ag-button h-auto p-4 flex flex-col items-center space-y-2"
-                    onClick={() => window.location.href = '/sustainability'}
-                  >
-                    <span className="text-lg">🌍</span>
-                    <span className="text-sm">Sustainability Analysis</span>
-                  </Button>
-
-                  <Button
-                    className="ag-button h-auto p-4 flex flex-col items-center space-y-2"
-                    onClick={() => loadDashboardData()}
-                  >
-                    <span className="text-lg">🔄</span>
-                    <span className="text-sm">Refresh Data</span>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+            )}
           </div>
         )}
       </div>
     </div>
   );
-}
+};
+
+export default WeatherApp;
