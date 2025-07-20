@@ -61,11 +61,11 @@ export default function HomePage() {
     },
     {
       icon: <BarChart3 className="h-8 w-8 text-orange-600" />,
-      title: 'Dashboard',
-      description: 'View comprehensive analytics and insights from all your agricultural predictions and assessments.',
-      href: '/dashboard',
+      title: 'Weather',
+      description: 'View the Weather details with a voice Functionality',
+      href: '/weather',
       color: 'bg-orange-50 hover:bg-orange-100',
-      benefits: ['Data visualization', 'Trend analysis', 'Performance metrics']
+      benefits: ['Weather Forcasting', 'Voice to weather']
     }
   ];
 
